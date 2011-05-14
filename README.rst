@@ -8,6 +8,10 @@ What's not so great is that during the restart, there is a window of time where,
 
 Django-pserver solves this problem by reusing the listening socket when it restarts, so you can just hit refresh once and wait (retaining your sanity.)
 
+Usage
+-----
+To use it, simply add ``pserver`` to your ``INSTALLED_APPS``, and run ``manage.py runserver`` as usual.
+
 
 TODO
 ----
