@@ -8,6 +8,7 @@ setup(
     version = __version__,
     author = "Wil Tan",
     author_email = "wil@dready.org",
+    url = 'https://github.com/wil/django-pserver',
     description = "Django runserver replacement that reuses its listening socket on reload",
     license = "MIT/X",
     # install_requires = ['Django>=1.3'],
