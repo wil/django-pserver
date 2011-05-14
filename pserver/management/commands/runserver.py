@@ -23,7 +23,6 @@ class Command(RunServerCommand):
 
 
     def handle(self, addrport='', *args, **options):
-        self.new_sock = False
         if hasattr(RunServerCommand, 'inner_run'):
             self.has_ipv6_support = True
             # Django 1.3-ish, our overwritten self.run and self.inner_run functions should work
@@ -41,16 +40,15 @@ class Command(RunServerCommand):
             PERSISTENT_SOCK = socket.socket(socket.AF_INET6 if self.use_ipv6 else socket.AF_INET,
                                             socket.SOCK_STREAM)
             os.environ['SERVER_FD'] = str(PERSISTENT_SOCK.fileno())
-            self.new_sock = True
         else:
-            if not self.new_sock:
-                print "Reusing existing socket (fd=%s)" % existing_fd
+            # print "Reusing existing socket (fd=%s)" % existing_fd
             PERSISTENT_SOCK = socket.fromfd(int(existing_fd),
                                             socket.AF_INET6 if self.use_ipv6 else socket.AF_INET,
                                             socket.SOCK_STREAM)
 
     def run_wsgi_server(self, addr, port, handler):
         """ replaces ``django.core.servers.basehttp.run`` """
+        global PERSISTENT_SOCK
         kwargs = dict(bind_and_activate=False)
         if self.has_ipv6_support:
             kwargs['ipv6'] = self.use_ipv6
@@ -159,33 +157,15 @@ class Command(RunServerCommand):
         else:
             inner_run()
 
+
     def run(self, *args, **options):
-        """
-        Runs the server, using the autoreloader if needed
-        """
-        global PERSISTENT_SOCK
-        
-        use_reloader = options.get('use_reloader', True)
+        """ Override the parent method which exists after Django r14553 (1.3 release) """
+        self.init_sock()
+        return super(Command, self).run(*args, **options)
 
-        existing_fd = os.environ.get('SERVER_FD')
-        if not existing_fd:
-            PERSISTENT_SOCK = socket.socket(socket.AF_INET6 if self.use_ipv6 else socket.AF_INET,
-                                            socket.SOCK_STREAM)
-            os.environ['SERVER_FD'] = str(PERSISTENT_SOCK.fileno())
-            self.new_sock = True
-        else:
-            print "Reusing existing socket (fd=%s)" % existing_fd
-            PERSISTENT_SOCK = socket.fromfd(int(existing_fd),
-                                            socket.AF_INET6 if self.use_ipv6 else socket.AF_INET,
-                                            socket.SOCK_STREAM)
-
-        if use_reloader:
-            autoreload.main(self.inner_run, args, options)
-        else:
-            self.inner_run(*args, **options)
 
     def inner_run(self, *args, **options):
-        global PERSISTENT_SOCK
+        """ Override the parent method which exists after Django r14553 (1.3 release) """
         from django.conf import settings
         from django.utils import translation
 
@@ -213,25 +193,7 @@ class Command(RunServerCommand):
 
         try:
             handler = self.get_handler(*args, **options)
-            server_address = (self.addr, int(self.port))
-            httpd = WSGIServer(server_address, WSGIRequestHandler, ipv6=self.use_ipv6, bind_and_activate=False)
-            httpd.socket = PERSISTENT_SOCK
-
-            try:
-                httpd.server_bind()
-            except WSGIServerException, e:
-                if 'Errno 22' in str(e):
-                    # may have been bound, just emulate some stuff done in server_bind (like setting up environ)
-                    httpd.server_name = socket.getfqdn(self.addr)
-                    httpd.server_port = int(self.port)
-                    httpd.setup_environ()
-                else:
-                    raise
-            httpd.server_activate()
-            httpd.set_app(handler)
-            httpd.serve_forever()
-
-
+            self.run_wsgi_server(self.addr, int(self.port), handler)
         except KeyboardInterrupt:
             if shutdown_message:
                 self.stdout.write("%s\n" % shutdown_message)
